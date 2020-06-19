@@ -7,6 +7,7 @@
 repositories {
   mavenLocal()
   mavenCentral()
+  maven { url = 'https://maven.teamdev.com/repository/products' }
 }
 
 apply plugin: 'java'
@@ -33,6 +34,8 @@ intellij {
 dependencies {
   testCompile "org.powermock:powermock-api-mockito2:2.0.0"
   testCompile "org.powermock:powermock-module-junit4:2.0.0"
+  implementation "com.teamdev.jxbrowser:jxbrowser-cross-platform:${jxBrowserVersion}"
+  implementation "com.teamdev.jxbrowser:jxbrowser-swing:${jxBrowserVersion}"
 }
 
 /* Need to swizzle source and resource paths to match standard or buildPlugin does nothing. */

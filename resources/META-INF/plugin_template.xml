@@ -54,6 +54,9 @@
       <action id="Flutter.DeviceSelectorRefresher" class="io.flutter.actions.DeviceSelectorRefresherAction"
               text="Refresh Device List"
               description="Refresh device list" />
+      <action id="Flutter.StartJxBrowserAction" class="io.flutter.actions.StartJxBrowserAction"
+              text="JX Browser"
+              description="JX Browser" />
       <separator/>
       <add-to-group anchor="before" group-id="RunContextGroup" relative-to-action="RunConfiguration"/>
       <add-to-group anchor="before" group-id="ToolbarRunGroup" relative-to-action="RunConfiguration"/>

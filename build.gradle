@@ -11,6 +11,11 @@ plugins {
 repositories {
   mavenLocal()
   mavenCentral()
+  maven { url = 'https://maven.teamdev.com/repository/products' }
+}
+
+ext {
+  jxBrowserVersion = '7.8'
 }
 
 apply plugin: "org.jetbrains.intellij"
@@ -37,6 +42,8 @@ dependencies {
   if (ide == 'android-studio') {
     implementation project('flutter-studio')
   }
+  implementation "com.teamdev.jxbrowser:jxbrowser-cross-platform:${jxBrowserVersion}"
+  implementation "com.teamdev.jxbrowser:jxbrowser-swing:${jxBrowserVersion}"
 }
 
 sourceSets {
