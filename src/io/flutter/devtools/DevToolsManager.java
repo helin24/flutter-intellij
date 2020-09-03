@@ -388,6 +388,7 @@ class DevToolsInstance {
   }
 
   public void openBrowserAndConnect(String serviceProtocolUri, String page) {
+    // check usages
     BrowserLauncher.getInstance().browse(
       DevToolsUtils.generateDevToolsUrl(devtoolsHost, devtoolsPort, serviceProtocolUri, page, false),
       null
