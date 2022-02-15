@@ -449,15 +449,6 @@ public abstract class DartVmServiceDebugProcess extends XDebugProcess {
     return executionEnvironment;
   }
 
-  @Nullable
-  public XDebuggerEvaluator getEvaluator() {
-    final XStackFrame frame = getSession().getCurrentStackFrame();
-    if (frame != null) {
-      return frame.getEvaluator();
-    }
-    return new DartVmServiceEvaluator(this);
-  }
-
   @NotNull
   private String formatStackTraces(Throwable e) {
     final StringBuilder out = new StringBuilder();

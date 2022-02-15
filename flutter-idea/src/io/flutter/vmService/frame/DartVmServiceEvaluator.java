@@ -44,6 +44,7 @@ public class DartVmServiceEvaluator extends XDebuggerEvaluator {
     myDebugProcess = debugProcess;
   }
 
+  // Unclear if this is needed. Not sure if this is called by IntelliJ
   @Override
   public void evaluate(@NotNull final String expression,
                        @NotNull final XEvaluationCallback callback,

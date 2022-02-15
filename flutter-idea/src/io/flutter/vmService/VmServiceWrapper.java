@@ -751,6 +751,7 @@ public class VmServiceWrapper implements Disposable {
               }
             }
           }
+          // search in here for where we're getting file name
           container.addStackFrames(firstFrameIndex == 0 ? xStackFrames : xStackFrames.subList(firstFrameIndex, xStackFrames.size()), true);
         });
       }
@@ -849,6 +850,7 @@ public class VmServiceWrapper implements Disposable {
                                       @NotNull final String targetId,
                                       @NotNull final String expression,
                                       @NotNull final XDebuggerEvaluator.XEvaluationCallback callback) {
+    // This is called when evaluation is used during breakpoint
     evaluateInTargetContext(isolateId, targetId, expression, new EvaluateConsumer() {
       @Override
       public void received(InstanceRef instanceRef) {
