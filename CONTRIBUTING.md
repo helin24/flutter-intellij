@@ -54,7 +54,7 @@ name and contact info to the [AUTHORS](AUTHORS) file.
 
 ## Setting environments
 
-The current Java Developmenet Kit version is: **20**.
+The current Java Development Kit version is: **20**.
 
 1. Set your `JAVA_HOME` directory in your environment.
     - For example, on macOS, the following works:
