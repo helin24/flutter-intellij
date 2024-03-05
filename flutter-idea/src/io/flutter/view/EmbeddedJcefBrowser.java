@@ -54,17 +54,18 @@ public class EmbeddedJcefBrowser extends EmbeddedBrowser {
   }
 
   public static boolean isUsable() {
-    if (jcefIsUsable != null) return jcefIsUsable;
-
-    try {
-      new JBCefBrowser();
-    }
-    catch (IllegalStateException e) {
-      jcefIsUsable = false;
-      return false;
-    }
-    jcefIsUsable = true;
-    return true;
+    return false;
+    //if (jcefIsUsable != null) return jcefIsUsable;
+    //
+    //try {
+    //  new JBCefBrowser();
+    //}
+    //catch (IllegalStateException e) {
+    //  jcefIsUsable = false;
+    //  return false;
+    //}
+    //jcefIsUsable = true;
+    //return true;
   }
 
   public Logger logger() {
