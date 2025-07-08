@@ -29,7 +29,11 @@
   <depends>com.intellij.modules.lang</depends>
   <depends>com.intellij.modules.xdebugger</depends>
   <depends>org.jetbrains.plugins.yaml</depends>
+  <!-- If plugin does not exist, then this plugin can't be installed -->
+  <!-- If plugin does exist, then this plugin can be installed. however config file elements won't be inserted -->
+  <!-- We want to change so that plugin can be installed without it -->
   <depends>org.jetbrains.android</depends>
+
   <depends>Dart</depends>
   <depends>Git4Idea</depends>
 
