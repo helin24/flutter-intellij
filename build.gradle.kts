@@ -267,3 +267,39 @@ tasks.register("printCompileClasspath") {
     println("--- End Compile Classpath ---")
   }
 }
+
+val writeLicenseKey = tasks.register("writeLicenseKey") {
+  group = "build"
+  description = "Writes the license key from an environment variable to a file."
+
+  // Use the output directory of the prepareSandbox task as the destination
+  val outputDir = rootProject.file("resources/jxbrowser")
+  val licenseFile = outputDir.resolve("license.key")
+
+  // Define the output file for Gradle's up-to-date checks
+  outputs.file(licenseFile)
+
+  doLast {
+    // Read the license key from the environment variable
+
+    // To test, temporarily set
+    // KOKORO_KEYSTORE_DIR="~/Documents/test/keystore"
+    // FLUTTER_KEYSTORE_ID=74840
+    // FLUTTER_KEYSTORE_JXBROWSER_KEY_NAME=flutter-intellij-plugin-jxbrowser-license-key
+
+    val base = System.getenv("KOKORO_KEYSTORE_DIR")
+    val id = System.getenv("FLUTTER_KEYSTORE_ID")
+    val name = System.getenv("FLUTTER_KEYSTORE_JXBROWSER_KEY_NAME")
+
+    val readFile = rootProject.file(base + "/" + id + "_" + name)
+    if (readFile.isFile) {
+      val licenseKey = readFile.readText(Charsets.UTF_8)
+      println("Writing license key to ${licenseFile.absolutePath}")
+      licenseFile.writeText(licenseKey)
+    }
+  }
+}
+
+tasks.named("buildPlugin") {
+  dependsOn(writeLicenseKey)
+}
