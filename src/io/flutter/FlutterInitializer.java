@@ -5,6 +5,7 @@
  */
 package io.flutter;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import com.intellij.ide.browsers.BrowserLauncher;
@@ -18,10 +19,20 @@ import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.editor.CaretState;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.LogicalPosition;
 import com.intellij.openapi.editor.colors.EditorColorsListener;
 import com.intellij.openapi.editor.colors.EditorColorsManager;
+import com.intellij.openapi.editor.event.CaretEvent;
+import com.intellij.openapi.editor.event.CaretListener;
 import com.intellij.openapi.extensions.PluginId;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.openapi.fileEditor.FileEditor;
 import com.intellij.openapi.fileEditor.FileEditorManager;
+import com.intellij.openapi.fileEditor.FileEditorManagerEvent;
+import com.intellij.openapi.fileEditor.FileEditorManagerListener;
+import com.intellij.openapi.fileEditor.TextEditor;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.ModuleListener;
 import com.intellij.openapi.project.Project;
@@ -29,6 +40,7 @@ import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.messages.MessageBusConnection;
+import com.jetbrains.lang.dart.ide.toolingDaemon.DartToolingDaemonResponse;
 import de.roderick.weberknecht.WebSocketException;
 import io.flutter.android.IntelliJAndroidSdk;
 import io.flutter.bazel.WorkspaceCache;
@@ -75,7 +87,11 @@ public class FlutterInitializer extends FlutterProjectActivity {
 
   private boolean busSubscribed = false;
 
+  private @NotNull AtomicLong lastScheduledActiveLocationChangeTime = new AtomicLong();
   private @NotNull AtomicLong lastScheduledThemeChangeTime = new AtomicLong();
+
+  private Editor lastEditor;
+  private CaretListener caretListener;
 
   // Shared scheduler to avoid creating/closing executors on EDT
   @NotNull
@@ -209,6 +225,11 @@ public class FlutterInitializer extends FlutterProjectActivity {
     // Set our preferred settings for the run console.
     FlutterConsoleLogManager.initConsolePreferences();
 
+    registerDtdServices(project);
+
+    // Initialize notifications for location changes.
+    setUpLocationChangeNotifications(project);
+
     // Initialize notifications for theme changes.
     setUpThemeChangeNotifications(project);
 
@@ -222,6 +243,22 @@ public class FlutterInitializer extends FlutterProjectActivity {
     setUpDtdAnalytics(project);
   }
 
+  private void registerDtdServices(@NotNull Project project) {
+    new DtdUtils().readyDtdService(project).thenAccept(dtdService -> {
+      if (dtdService == null) {
+        log().error("DTD service was null, so editor services cannot be registered.");
+        return;
+      }
+      try {
+        dtdService.registerServiceMethod("Editor", "getActiveLocation", new JsonObject(), request -> {
+          return new DartToolingDaemonResponse(new JsonObject(), null);
+        });
+      } catch (Exception e) {
+        log().error("Error while registering getActiveLocation", e);
+      }
+    });
+  }
+
   private void setUpDtdAnalytics(Project project) {
     if (project == null) return;
     FlutterSdk sdk = FlutterSdk.getFlutterSdk(project);
@@ -232,6 +269,59 @@ public class FlutterInitializer extends FlutterProjectActivity {
     //unifiedAnalytics.manageConsent();
     //});
     //t1.start();
+  }
+
+  private void setUpLocationChangeNotifications(@NotNull Project project) {
+    project.getMessageBus().connect().subscribe(FileEditorManagerListener.FILE_EDITOR_MANAGER, new FileEditorManagerListener() {
+      @Override
+      public void selectionChanged(@NotNull FileEditorManagerEvent event) {
+        if (lastEditor != null && caretListener != null) {
+          lastEditor.getCaretModel().removeCaretListener(caretListener);
+        }
+
+        final FileEditor newEditor = event.getNewEditor();
+        if (newEditor instanceof TextEditor) {
+          lastEditor = ((TextEditor)newEditor).getEditor();
+          if (caretListener == null) {
+            caretListener = new CaretListener() {
+              @Override
+              public void caretPositionChanged(@NotNull CaretEvent event) {
+                OpenApiUtils.safeInvokeLater(() -> {
+                  List<CaretState> selections = event.getCaret().getCaretModel().getCaretsAndSelections();
+                  sendActiveLocationChangedEvent(project, event.getEditor(), selections);
+                });
+              }
+            };
+          }
+          lastEditor.getCaretModel().addCaretListener(caretListener);
+        } else {
+          lastEditor = null;
+        }
+      }
+    });
+
+    // Handle the initially selected editor
+    final FileEditorManager fileEditorManager = FileEditorManager.getInstance(project);
+    final FileEditor[] selectedEditors = fileEditorManager.getSelectedEditors();
+    if (selectedEditors.length > 0) {
+      final FileEditor firstEditor = selectedEditors[0];
+      if (firstEditor instanceof TextEditor) {
+        if (caretListener == null) {
+          caretListener = new CaretListener() {
+            @Override
+            public void caretPositionChanged(@NotNull CaretEvent event) {
+              OpenApiUtils.safeInvokeLater(() -> {
+                List<CaretState> selections = event.getCaret().getCaretModel().getCaretsAndSelections();
+                sendActiveLocationChangedEvent(project, event.getEditor(), selections);
+              });
+            }
+          };
+        }
+        lastEditor = ((TextEditor)firstEditor).getEditor();
+        lastEditor.getCaretModel().addCaretListener(caretListener);
+        //sendActiveLocationChangedEvent(project, lastEditor, lastEditor.getCaretModel().getCaretsAndSelections());
+      }
+    }
   }
 
   private void setUpThemeChangeNotifications(@NotNull Project project) {
@@ -249,6 +339,110 @@ public class FlutterInitializer extends FlutterProjectActivity {
       busSubscribed = true;
     });
     t1.start();
+  }
+
+  private void sendActiveLocationChangedEvent(@NotNull Project project, @NotNull Editor activeEditor, @NotNull List<CaretState> caretStates) {
+    // Debounce this request because the topic subscriptions can trigger multiple times (potentially from initial notification of change and
+    // also from application of change)
+
+    // Set the current time of this request
+    final long requestTime = System.currentTimeMillis();
+    lastScheduledActiveLocationChangeTime.set(requestTime);
+
+    scheduler.schedule(() -> {
+      if (lastScheduledActiveLocationChangeTime.get() != requestTime) {
+        // A more recent request has been set, so drop this request.
+        return;
+      }
+
+      VirtualFile virtualFile = FileDocumentManager.getInstance().getFile(activeEditor.getDocument());
+      if (virtualFile == null) {
+        return;
+      }
+
+      String fileUrl = virtualFile.getUrl();
+
+
+      final JsonObject textDocumentIdentifier = new JsonObject();
+      textDocumentIdentifier.addProperty("uri", fileUrl);
+
+      final JsonArray selections = new JsonArray();
+
+      caretStates.forEach(caretState -> {
+        if (caretState == null) return;
+
+        final LogicalPosition start = caretState.getSelectionStart();
+        if (start == null) return;
+
+        final JsonObject anchorPosition = new JsonObject();
+        anchorPosition.addProperty("line", start.line);
+        anchorPosition.addProperty("character", start.column);
+
+        final LogicalPosition end = caretState.getSelectionEnd();
+        if (end == null) return;
+
+        final JsonObject activePosition = new JsonObject();
+        activePosition.addProperty("line", end.line);
+        activePosition.addProperty("character", end.column);
+
+        final JsonObject selection = new JsonObject();
+        selection.add("anchor", anchorPosition);
+        selection.add("active", activePosition);
+
+        selections.add(selection);
+      });
+
+      final JsonObject activeLocationData = new JsonObject();
+      activeLocationData.add("textDocument", textDocumentIdentifier);
+      activeLocationData.add("selections", selections);
+
+      final JsonObject eventData = new JsonObject();
+      eventData.add("activeLocation", activeLocationData);
+
+      final JsonObject params = new JsonObject();
+      params.addProperty("eventKind", "activeLocationChanged");
+      params.addProperty("streamId", "Editor");
+      params.add("eventData", eventData);
+
+      log().info("Sending activeLocationChanged event");
+      //log().info(params);
+      sendDtdEvent(project, "activeLocationChanged", params);
+    }, 1, TimeUnit.SECONDS);
+  }
+
+  private void sendDtdEvent(@NotNull Project project, @NotNull String eventName, JsonObject params) {
+    final DtdUtils dtdUtils = new DtdUtils();
+    dtdUtils.readyDtdService(project)
+      .thenAccept(dtdService -> {
+        if (dtdService == null) {
+          log().warn("Unable to send event " + eventName + " because DTD service is null");
+          return;
+        }
+        try {
+          dtdService.sendRequest("postEvent", params, false, object -> {
+            JsonObject result = object.getAsJsonObject("result");
+            if (result == null) {
+              log().error("Event " + eventName + " returned null result");
+              return;
+            }
+            JsonPrimitive type = result.getAsJsonPrimitive("type");
+            if (type == null) {
+              log().error("Event " + eventName + " result type is null");
+              return;
+            }
+            if (!"Success".equals(type.getAsString())) {
+              log().error("Event " + eventName + " result: " + type.getAsString());
+            }
+          });
+        }
+        catch (WebSocketException e) {
+          log().error("Unable to send event " + eventName, e);
+        }
+      })
+      .exceptionally(e -> {
+        log().debug("DTD not ready; skipping event " + eventName, e);
+        return null;
+      });
   }
 
   private void sendThemeChangedEvent(@NotNull Project project) {
@@ -280,38 +474,7 @@ public class FlutterInitializer extends FlutterProjectActivity {
       eventData.add("theme", themeData);
       params.add("eventData", eventData);
 
-      final DtdUtils dtdUtils = new DtdUtils();
-      dtdUtils.readyDtdService(project)
-        .thenAccept(dtdService -> {
-          if (dtdService == null) {
-            log().warn("Unable to send theme changed event because DTD service is null");
-            return;
-          }
-          try {
-            dtdService.sendRequest("postEvent", params, false, object -> {
-              JsonObject result = object.getAsJsonObject("result");
-              if (result == null) {
-                log().error("Theme changed event returned null result");
-                return;
-              }
-              JsonPrimitive type = result.getAsJsonPrimitive("type");
-              if (type == null) {
-                log().error("Theme changed event result type is null");
-                return;
-              }
-              if (!"Success".equals(type.getAsString())) {
-                log().error("Theme changed event result: " + type.getAsString());
-              }
-            });
-          }
-          catch (WebSocketException e) {
-            log().error("Unable to send theme changed event", e);
-          }
-        })
-        .exceptionally(e -> {
-          log().debug("DTD not ready; skipping themeChanged event", e);
-          return null;
-        });
+      sendDtdEvent(project, "themeChanged", params);
     }, 1, TimeUnit.SECONDS);
   }
 
