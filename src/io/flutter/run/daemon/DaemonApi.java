@@ -167,9 +167,6 @@ public class DaemonApi {
         listener.processTerminated(event.getExitCode());
       }
     });
-
-    // All hooked up and ready to receive events.
-    process.startNotify();
   }
 
   /**

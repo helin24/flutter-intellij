@@ -129,7 +129,8 @@ public class FlutterDebugSessionUtils {
             builder = hooks.sessionNameMethod.invoke(builder, sessionName);
         }
         if (hooks.showTabMethod != null) {
-            builder = hooks.showTabMethod.invoke(builder, true);
+            boolean showTab = !env.getExecutor().getId().equals(com.intellij.execution.executors.DefaultRunExecutor.EXECUTOR_ID);
+            builder = hooks.showTabMethod.invoke(builder, showTab);
         }
         return builder;
     }
