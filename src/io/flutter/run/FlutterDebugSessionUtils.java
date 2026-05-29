@@ -172,6 +172,10 @@ public class FlutterDebugSessionUtils {
         return null;
     }
 
+    public static boolean useNamedTab() {
+        return builderHooks != null && getNamedTabSupportError() == null;
+    }
+
     @VisibleForTesting
     static final class BuilderHooks {
         final Method newSessionBuilderMethod;

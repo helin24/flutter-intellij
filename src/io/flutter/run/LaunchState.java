@@ -161,7 +161,12 @@ public class LaunchState extends CommandLineState {
     final RunContentDescriptor descriptor;
     if (launchMode.supportsDebugConnection()) {
       ToolWindowBadgeUpdater.updateBadgedIcon(app, project);
-      descriptor = createDebugSession(env, app, result, nameWithDeviceName);
+      final RunContentDescriptor debugDescriptor = createDebugSession(env, app, result, nameWithDeviceName);
+      if (app.getMode() == RunMode.RUN) {
+        descriptor = new RunContentBuilder(result, env).showRunContent(env.getContentToReuse());
+      } else {
+        descriptor = debugDescriptor;
+      }
     }
     else {
       descriptor = new RunContentBuilder(result, env).showRunContent(env.getContentToReuse());
@@ -280,6 +285,16 @@ public class LaunchState extends CommandLineState {
       super.createActions(console, app.getProcessHandler(), getEnvironment().getExecutor())));
     actions.add(new Separator());
     actions.add(new OpenDevToolsAction(app, observatoryAvailable));
+
+    if (app.getMode() == RunMode.RUN) {
+      final Computable<Boolean> isSessionActive = () -> app.isStarted() &&
+                                                         app.getFlutterDebugProcess() != null &&
+                                                         app.getFlutterDebugProcess().getVmConnected() &&
+                                                         !app.getProcessHandler().isProcessTerminated();
+      final Computable<Boolean> canReload = () -> app.getLaunchMode().supportsReload() && isSessionActive.compute() && !app.isReloading();
+      actions.add(new io.flutter.actions.ReloadFlutterApp(app, canReload));
+      actions.add(new io.flutter.actions.RestartFlutterApp(app, canReload));
+    }
 
     return new DefaultExecutionResult(console, app.getProcessHandler(), actions.toArray(new AnAction[0]));
   }

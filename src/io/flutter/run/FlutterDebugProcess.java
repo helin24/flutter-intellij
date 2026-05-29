@@ -121,8 +121,20 @@ public class FlutterDebugProcess extends DartVmServiceDebugProcess {
   @Override
   public void sessionInitialized() {
     if (app.getMode() != RunMode.DEBUG) {
-      suppressDebugViews(getSession().getUI());
+      if (!FlutterDebugSessionUtils.useNamedTab()) {
+        suppressDebugViews(getSession().getUI());
+      }
     }
+  }
+
+  @NotNull
+  @Override
+  public com.intellij.execution.ui.ExecutionConsole createConsole() {
+    if (app.getMode() == RunMode.RUN) {
+      return com.intellij.execution.filters.TextConsoleBuilderFactory.getInstance()
+        .createBuilder(getSession().getProject()).getConsole();
+    }
+    return super.createConsole();
   }
 
   /**
