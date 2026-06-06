@@ -48,6 +48,14 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
+import com.intellij.ide.browsers.BrowserLauncher;
+import com.intellij.ui.components.labels.LinkLabel;
+import com.intellij.util.ui.JBUI;
+import com.intellij.openapi.ui.VerticalFlowLayout;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
+
 
 class EmbeddedJxBrowserTab implements EmbeddedTab {
   private final Engine engine;
@@ -153,9 +161,164 @@ class EmbeddedJxBrowserTab implements EmbeddedTab {
   }
 }
 
+class LazyEmbeddedJxBrowserTab implements EmbeddedTab {
+  private final @NotNull ContentManager contentManager;
+  private final @NotNull Project project;
+  private final @NotNull EmbeddedJxBrowser embeddedBrowser;
+  private EmbeddedTab delegate;
+  private String pendingUrl;
+  private final JPanel panel = new JPanel(new BorderLayout());
+  private final JxBrowserUtils jxBrowserUtils = new JxBrowserUtils();
+
+  public LazyEmbeddedJxBrowserTab(@NotNull EmbeddedJxBrowser embeddedBrowser,
+                                  @NotNull Project project,
+                                  @NotNull ContentManager contentManager,
+                                  @NotNull CompletableFuture<JxBrowserStatus> installation) {
+    this.embeddedBrowser = embeddedBrowser;
+    this.project = project;
+    this.contentManager = contentManager;
+
+    JxBrowserStatus status = JxBrowserManager.getInstance().getStatus();
+    if (status == JxBrowserStatus.INSTALLATION_FAILED) {
+      setupFailedUI(JxBrowserManager.getInstance().getLatestFailureReason());
+    } else {
+      setupInstallingUI();
+      listenToInstallation(installation);
+    }
+  }
+
+  private void listenToInstallation(CompletableFuture<JxBrowserStatus> future) {
+    AsyncUtils.whenCompleteUiThread(future, (status, throwable) -> {
+      if (throwable != null) {
+        setupFailedUI(new InstallationFailedReason(FailureType.CLASS_LOAD_FAILED, throwable.getMessage()));
+      } else if (status == JxBrowserStatus.INSTALLED) {
+        Engine engine = EmbeddedBrowserEngine.getInstance().getEngine();
+        if (engine != null) {
+          delegate = new EmbeddedJxBrowserTab(engine);
+          if (pendingUrl != null) {
+            delegate.loadUrl(pendingUrl);
+          }
+          panel.removeAll();
+          panel.add(delegate.getTabComponent(contentManager), BorderLayout.CENTER);
+          panel.revalidate();
+          panel.repaint();
+          delegate.matchIdeZoom();
+        } else {
+          setupFailedUI(new InstallationFailedReason(FailureType.CLASS_NOT_FOUND, "Engine is null"));
+        }
+      } else if (status == JxBrowserStatus.INSTALLATION_FAILED) {
+        setupFailedUI(JxBrowserManager.getInstance().getLatestFailureReason());
+      }
+    });
+  }
+
+  private void setupInstallingUI() {
+    panel.removeAll();
+    final JPanel labelsPanel = new JPanel(new GridLayout(0, 1));
+
+    final JLabel descriptionLabel = new JLabel("<html>" + EmbeddedJxBrowser.INSTALLATION_IN_PROGRESS_LABEL + "</html>");
+    descriptionLabel.setBorder(JBUI.Borders.empty(5));
+    descriptionLabel.setHorizontalAlignment(SwingConstants.CENTER);
+    labelsPanel.add(descriptionLabel);
+
+    final LinkLabel<String> linkLabel = new LinkLabel<>("<html>Open DevTools in the browser?</html>", null);
+    linkLabel.setBorder(JBUI.Borders.empty(5));
+    linkLabel.setListener((a, b) -> openInBrowser(), null);
+    linkLabel.setHorizontalAlignment(SwingConstants.CENTER);
+    labelsPanel.add(linkLabel);
+
+    final JPanel center = new JPanel(new VerticalFlowLayout(VerticalFlowLayout.MIDDLE));
+    center.add(labelsPanel);
+
+    panel.add(center, BorderLayout.CENTER);
+    panel.revalidate();
+    panel.repaint();
+  }
+
+  private void setupFailedUI(InstallationFailedReason failedReason) {
+    panel.removeAll();
+    final JPanel labelsPanel = new JPanel(new GridLayout(0, 1));
+
+    if (!jxBrowserUtils.licenseIsSet()) {
+      labelsPanel.add(createCentredLabel("The JxBrowser license could not be found."));
+    }
+    else if (failedReason != null && Objects.equals(failedReason.failureType, FailureType.SYSTEM_INCOMPATIBLE)) {
+      labelsPanel.add(createCentredLabel(failedReason.detail));
+    }
+    else {
+      labelsPanel.add(createCentredLabel("JxBrowser installation failed."));
+
+      final LinkLabel<String> retryLabel = new LinkLabel<>("<html>Retry installation?</html>", null);
+      retryLabel.setBorder(JBUI.Borders.empty(5));
+      retryLabel.setListener((linkLabel, data) -> {
+        JxBrowserManager.getInstance().retryFromFailed(project);
+        setupInstallingUI();
+        listenToInstallation(JxBrowserManager.installation);
+      }, null);
+      retryLabel.setHorizontalAlignment(SwingConstants.CENTER);
+      labelsPanel.add(retryLabel);
+    }
+
+    final LinkLabel<String> openBrowserLabel = new LinkLabel<>("<html>Open DevTools in the browser?</html>", null);
+    openBrowserLabel.setBorder(JBUI.Borders.empty(5));
+    openBrowserLabel.setListener((a, b) -> openInBrowser(), null);
+    openBrowserLabel.setHorizontalAlignment(SwingConstants.CENTER);
+    labelsPanel.add(openBrowserLabel);
+
+    final JPanel center = new JPanel(new VerticalFlowLayout(VerticalFlowLayout.MIDDLE));
+    center.add(labelsPanel);
+
+    panel.add(center, BorderLayout.CENTER);
+    panel.revalidate();
+    panel.repaint();
+  }
+
+  private JLabel createCentredLabel(String text) {
+    final JLabel label = new JLabel("<html>" + text + "</html>");
+    label.setBorder(JBUI.Borders.empty(5));
+    label.setHorizontalAlignment(SwingConstants.CENTER);
+    return label;
+  }
+
+  private void openInBrowser() {
+    if (pendingUrl == null) {
+      return;
+    }
+    BrowserLauncher.getInstance().browse(pendingUrl, null);
+  }
+
+  @Override
+  public void loadUrl(String url) {
+    if (delegate != null) {
+      delegate.loadUrl(url);
+    } else {
+      pendingUrl = url;
+    }
+  }
+
+  @Override
+  public void close() {
+    if (delegate != null) {
+      delegate.close();
+    }
+  }
+
+  @Override
+  public void matchIdeZoom() {
+    if (delegate != null) {
+      delegate.matchIdeZoom();
+    }
+  }
+
+  @Override
+  public JComponent getTabComponent(ContentManager contentManager) {
+    return panel;
+  }
+}
+
 public class EmbeddedJxBrowser extends EmbeddedBrowser {
   private static final @NotNull Logger LOG = PluginLogger.createLogger(JxBrowserManager.class);
-  private static final String INSTALLATION_IN_PROGRESS_LABEL = "Installing JxBrowser...";
+  static final String INSTALLATION_IN_PROGRESS_LABEL = "Installing JxBrowser...";
   private static final String INSTALLATION_TIMED_OUT_LABEL =
     "Waiting for JxBrowser installation timed out. Restart your IDE to try again.";
   private static final String INSTALLATION_WAIT_FAILED = "The JxBrowser installation failed unexpectedly. Restart your IDE to try again.";
@@ -207,19 +370,10 @@ public class EmbeddedJxBrowser extends EmbeddedBrowser {
 
   @Override
   public @Nullable EmbeddedTab openEmbeddedTab(@NotNull ContentManager contentManager) {
-    manageJxBrowserDownload(contentManager);
-    // Do NOT initialize the JxBrowser Engine on the EDT.
-    // Historically, we tried to 'fallback' and construct the Engine here when it's null:
-    //   engineRef.compareAndSet(null, EmbeddedBrowserEngine.getInstance().getEngine());
-    // That path synchronously triggers Engine.newInstance(...) which blocks (CountDownLatch.await)
-    // and can freeze the Event Dispatch Thread (see #8394).
-    //
-    // Proceed only when the engine has been initialized by the async installation callback.
+    manageJxBrowserDownload();
     final Engine engine = engineRef.get();
     if (engine == null) {
-      // Show an "installation in progress" UX instead of attempting synchronous engine creation.
-      handleJxBrowserInstallationInProgress(contentManager);
-      return null;
+      return new LazyEmbeddedJxBrowserTab(this, project, contentManager, JxBrowserManager.installation);
     }
     return new EmbeddedJxBrowserTab(engine);
   }
@@ -259,85 +413,14 @@ public class EmbeddedJxBrowser extends EmbeddedBrowser {
     };
   }
 
-  private void manageJxBrowserDownload(@NotNull ContentManager contentManager) {
+  private void manageJxBrowserDownload() {
     final JxBrowserStatus jxBrowserStatus = jxBrowserManager.getStatus();
 
     if (jxBrowserStatus.equals(JxBrowserStatus.INSTALLED)) {
       return;
     }
-    else if (jxBrowserStatus.equals(JxBrowserStatus.INSTALLATION_IN_PROGRESS)) {
-      handleJxBrowserInstallationInProgress(contentManager);
-    }
-    else if (jxBrowserStatus.equals(JxBrowserStatus.INSTALLATION_FAILED)) {
-      handleJxBrowserInstallationFailed(contentManager);
-    }
     else if (jxBrowserStatus.equals(JxBrowserStatus.NOT_INSTALLED) || jxBrowserStatus.equals(JxBrowserStatus.INSTALLATION_SKIPPED)) {
       jxBrowserManager.setUp(project.getName());
-      handleJxBrowserInstallationInProgress(contentManager);
     }
-  }
-
-  protected void handleJxBrowserInstallationInProgress(ContentManager contentManager) {
-    showMessageWithUrlLink(INSTALLATION_IN_PROGRESS_LABEL, contentManager);
-
-    if (jxBrowserManager.getStatus().equals(JxBrowserStatus.INSTALLED)) {
-      return;
-    }
-    else {
-      waitForJxBrowserInstallation(contentManager);
-    }
-  }
-
-  protected void waitForJxBrowserInstallation(ContentManager contentManager) {
-    try {
-      final JxBrowserStatus newStatus = jxBrowserManager.waitForInstallation(INSTALLATION_WAIT_LIMIT_SECONDS);
-
-      handleUpdatedJxBrowserStatusOnEventThread(newStatus, contentManager);
-    }
-    catch (TimeoutException e) {
-      showMessageWithUrlLink(INSTALLATION_TIMED_OUT_LABEL, contentManager);
-    }
-  }
-
-  protected void handleUpdatedJxBrowserStatusOnEventThread(JxBrowserStatus jxBrowserStatus, ContentManager contentManager) {
-    AsyncUtils.invokeLater(() -> handleUpdatedJxBrowserStatus(jxBrowserStatus, contentManager));
-  }
-
-  protected void handleUpdatedJxBrowserStatus(JxBrowserStatus jxBrowserStatus, ContentManager contentManager) {
-    if (Objects.equals(jxBrowserStatus, JxBrowserStatus.INSTALLED)) {
-      return;
-    }
-    else if (jxBrowserStatus.equals(JxBrowserStatus.INSTALLATION_FAILED)) {
-      handleJxBrowserInstallationFailed(contentManager);
-    }
-    else {
-      // newStatus can be null if installation is interrupted or stopped for another reason.
-      showMessageWithUrlLink(INSTALLATION_WAIT_FAILED, contentManager);
-    }
-  }
-
-  protected void handleJxBrowserInstallationFailed(@NotNull ContentManager contentManager) {
-    final List<LabelInput> inputs = new SmartList<>();
-
-    final InstallationFailedReason latestFailureReason = jxBrowserManager.getLatestFailureReason();
-
-    if (!jxBrowserUtils.licenseIsSet()) {
-      // If the license isn't available, allow the user to open the equivalent page in a non-embedded browser window.
-      inputs.add(new LabelInput("The JxBrowser license could not be found."));
-    }
-    else if (latestFailureReason != null && Objects.equals(latestFailureReason.failureType, FailureType.SYSTEM_INCOMPATIBLE)) {
-      // If we know the system is incompatible, skip retry link and offer to open in browser.
-      inputs.add(new LabelInput(latestFailureReason.detail));
-    }
-    else {
-      // Allow the user to manually restart or open the equivalent page in a non-embedded browser window.
-      inputs.add(new LabelInput("JxBrowser installation failed."));
-      inputs.add(new LabelInput("Retry installation?", (linkLabel, data) -> {
-        jxBrowserManager.retryFromFailed(project);
-        handleJxBrowserInstallationInProgress(contentManager);
-      }));
-    }
-
-    showLabelsWithUrlLink(inputs, contentManager);
   }
 }
