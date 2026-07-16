@@ -43,7 +43,14 @@ enforce standard modern Java/Kotlin coding conventions, but strictly police the 
     - Ensure `actionPerformed(AnActionEvent e)` methods are instrumented w/ a call to analytics reporting like
       `Analytics.report(AnalyticsData.forAction(this, e))`.
 
-## 3. Idiomatic Language Standards
+## 3. Code Generation & Editing Rules (Whitespace & Newlines)
+
+- **Strict Whitespace & Newline Discipline:** When modifying or deleting existing code, DO NOT introduce extraneous blank lines (`\n`) or arbitrary formatting changes.
+- **Clean Deletions:** When removing lines or blocks of code, ensure that the surrounding lines collapse cleanly without leaving behind empty or duplicate blank lines. A deletion patch should not show `+` empty lines where code was removed in the diff.
+- **No Unrelated Formatting:** Only modify lines directly relevant to the bug fix or feature. Do not re-indent or reformat adjacent code unless strictly required by the change.
+
+## 4. Idiomatic Language Standards
+
 
 ### Dart
 
