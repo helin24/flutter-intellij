@@ -27,7 +27,9 @@ import com.intellij.platform.dartlsp.api.customization.LspDocumentSymbolDisabled
 import com.intellij.platform.dartlsp.api.customization.LspFindReferencesDisabled
 import com.intellij.platform.dartlsp.api.customization.LspFoldingRangeDisabled
 import com.intellij.platform.dartlsp.api.customization.LspFormattingDisabled
+import com.intellij.platform.dartlsp.api.customization.LspGoToDefinitionCustomizer
 import com.intellij.platform.dartlsp.api.customization.LspGoToDefinitionDisabled
+import com.intellij.platform.dartlsp.api.customization.LspGoToDefinitionSupport
 import com.intellij.platform.dartlsp.api.customization.LspGoToTypeDefinitionDisabled
 import com.intellij.platform.dartlsp.api.customization.LspHoverCustomizer
 import com.intellij.platform.dartlsp.api.customization.LspHoverDisabled
@@ -104,7 +106,12 @@ class DartLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
                 LspHoverDisabled
             }
         
-        override val goToDefinitionCustomizer = LspGoToDefinitionDisabled
+        override val goToDefinitionCustomizer: LspGoToDefinitionCustomizer
+            get() = if (DartAnalysisServerService.isLspNavigationEnabled(project)) {
+                LspGoToDefinitionSupport()
+            } else {
+                LspGoToDefinitionDisabled
+            }
         override val goToTypeDefinitionCustomizer = LspGoToTypeDefinitionDisabled
         override val completionCustomizer = LspCompletionDisabled
         override val semanticTokensCustomizer = LspSemanticTokensDisabled
