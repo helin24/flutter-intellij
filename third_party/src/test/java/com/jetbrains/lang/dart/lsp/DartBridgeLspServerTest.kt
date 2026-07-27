@@ -250,6 +250,17 @@ class DartBridgeLspServerTest : DartCodeInsightFixtureTestCase() {
         assertTrue(mockClient.publishedDiagnostics?.diagnostics?.isEmpty() == true)
     }
 
+    fun testGetFileUriFormatting() {
+        val descriptor = DartLspServerDescriptor(project)
+        val file = myFixture.configureByText("foo.dart", "void main() {}").virtualFile
+        val uri = descriptor.getFileUri(file)
+        assertTrue(uri.startsWith("file:///"))
+        val pathAfterPrefix = uri.substring("file:///".length)
+        if (pathAfterPrefix.length >= 2 && (pathAfterPrefix[1] == ':' || pathAfterPrefix.substring(1).startsWith("%3A"))) {
+            assertTrue("Drive letter must be uppercase in: $uri", pathAfterPrefix[0].isUpperCase())
+        }
+    }
+
     private class MockLanguageClient : LanguageClient {
         var publishedDiagnostics: PublishDiagnosticsParams? = null
 
