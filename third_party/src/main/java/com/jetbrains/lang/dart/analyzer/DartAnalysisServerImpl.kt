@@ -10,7 +10,7 @@ import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
-import com.intellij.openapi.command.writeCommandAction
+import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.NlsSafe
@@ -57,17 +57,15 @@ internal class DartAnalysisServerImpl(private val project: Project, socket: Anal
       val label: @NlsSafe String? = params.label
       val commandName: String = label ?: DartBundle.message("code.changes.by.dart.analysis.server")
 
-      var applied = false
-      try {
-        writeCommandAction(project, commandName) {
-          applyWorkspaceEdit(params.workspaceEdit)
-          consumer.workspaceEditApplied(DartLspApplyWorkspaceEditResult(true))
-          applied = true
-        }
+      val result = runCatching {
+        WriteCommandAction.writeCommandAction(project)
+          .withName(commandName)
+          .compute<Boolean, Throwable> {
+            applyWorkspaceEdit(params.workspaceEdit)
+          }
       }
-      finally {
-        if (!applied) consumer.workspaceEditApplied(DartLspApplyWorkspaceEditResult(false))
-      }
+      consumer.workspaceEditApplied(DartLspApplyWorkspaceEditResult(result.getOrDefault(false)))
+      result.getOrThrow()
     }
   }
 
