@@ -3,6 +3,7 @@
 ### Added
 - Populate Dart Analysis tool window errors and warnings using Language Server Protocol (LSP) publishDiagnostics notifications (#520)
 - Go to Type Declaration implemented with JetBrains LSP (#615)
+- Type and Call Hierarchy navigation implemented with JetBrains LSP (#403)
 
 ### Changed
 - Diagnostics server port retrieval via LSP has passed the experimental phase and is now enabled for all users with an appropriate SDK
