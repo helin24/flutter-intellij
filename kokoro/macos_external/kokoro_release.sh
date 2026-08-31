@@ -15,6 +15,9 @@ set -e
 # The final directory name in this path is determined by the scm name specified
 # in the job configuration.
 cd ${KOKORO_ARTIFACTS_DIR}/github/flutter-intellij-kokoro
-cd flutter
 
-./tool/kokoro/deploy.sh
+echo "=== Releasing Flutter Plugin ==="
+(cd flutter && ./tool/kokoro/deploy.sh)
+
+echo "=== Releasing Dart Plugin ==="
+(cd dart && ./third_party/tool/kokoro/deploy.sh)

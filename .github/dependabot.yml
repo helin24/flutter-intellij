@@ -24,3 +24,13 @@ updates:
       - "kokoro:run"
     cooldown:
       default-days: 7
+
+  - package-ecosystem: "gradle"
+    directory: "/dart/third_party"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "autosubmit"
+      - "kokoro:run"
+    cooldown:
+      default-days: 7
